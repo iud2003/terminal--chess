@@ -1,0 +1,4 @@
+python-chess>=1.999
+numpy>=1.26
+torch>=2.1
+PyQt6>=6.0

@@ -17,6 +17,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--depth", type=int, default=4, help="Search depth (default: 4)")
     parser.add_argument("--use-ml", action="store_true", help="Use the ML evaluation model")
     parser.add_argument("--model-path", default="models/eval_mlp.pt", help="Path to model file")
+    parser.add_argument("--use-stockfish", action="store_true", help="Use Stockfish for strong play")
+    parser.add_argument("--stockfish-path", default=None, help="Path to Stockfish binary")
+    parser.add_argument("--stockfish-depth", type=int, default=12, help="Stockfish depth (default: 12)")
+    parser.add_argument("--no-book", action="store_true", help="Disable opening book")
+    parser.add_argument("--no-random", action="store_true", help="Disable move randomness")
     parser.add_argument("--side", choices=["w", "b"], default=None, help="Play as white or black")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI colors")
     parser.add_argument("--human-plays", action="store_true", help="You play your side; bot plays opponent")
@@ -89,7 +94,16 @@ def main():
             print(f"Model not found at {args.model_path}. Using classic evaluation.")
 
     player_color = prompt_side(args.side)
-    config = EngineConfig(depth=args.depth, use_ml=args.use_ml, model=model)
+    config = EngineConfig(
+        depth=args.depth,
+        use_ml=args.use_ml,
+        model=model,
+        use_stockfish=args.use_stockfish,
+        stockfish_path=args.stockfish_path,
+        stockfish_depth=args.stockfish_depth,
+        use_book=not args.no_book,
+        randomness=not args.no_random,
+    )
     engine = ChessEngine(config)
 
     board = chess.Board()

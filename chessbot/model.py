@@ -4,9 +4,17 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-import torch
-import torch.nn as nn
 import chess
+
+# Try to import torch, but make it optional
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    nn = None
 
 
 PIECE_PLANES = [
@@ -19,8 +27,11 @@ PIECE_PLANES = [
 ]
 
 
-def board_to_tensor(board: chess.Board) -> torch.Tensor:
+def board_to_tensor(board: chess.Board):
     """Encode a board to a flat tensor for the MLP."""
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required for board_to_tensor")
+    
     planes = np.zeros((12, 8, 8), dtype=np.float32)
     for color in (chess.WHITE, chess.BLACK):
         for i, piece_type in enumerate(PIECE_PLANES):
@@ -46,18 +57,24 @@ def board_to_tensor(board: chess.Board) -> torch.Tensor:
     return torch.from_numpy(features).unsqueeze(0)
 
 
-class EvalMLP(nn.Module):
+class EvalMLP(nn.Module if TORCH_AVAILABLE else object):
+    """Neural network evaluation model."""
     def __init__(self, input_dim: int):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, 1),
-        )
+        if TORCH_AVAILABLE:
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(input_dim, 256),
+                nn.ReLU(),
+                nn.Linear(256, 128),
+                nn.ReLU(),
+                nn.Linear(128, 1),
+            )
+        else:
+            self.net = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for forward pass")
         return self.net(x)
 
 
@@ -66,7 +83,10 @@ class ModelConfig:
     input_dim: int
 
 
-def load_model(path: str) -> EvalMLP:
+def load_model(path: str):
+    """Load model from checkpoint."""
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required to load model checkpoint")
     payload = torch.load(path, map_location="cpu")
     config = ModelConfig(**payload["config"])
     model = EvalMLP(config.input_dim)
@@ -75,8 +95,11 @@ def load_model(path: str) -> EvalMLP:
     return model
 
 
-def evaluate_board(model: EvalMLP, board: chess.Board) -> int:
+def evaluate_board(model, board: chess.Board) -> int:
     """Return centipawn-like score from White's perspective."""
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required for board evaluation")
+    
     model.eval()
     with torch.no_grad():
         x = board_to_tensor(board)
