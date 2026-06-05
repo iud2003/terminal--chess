@@ -26,19 +26,27 @@ class EngineConfig:
     randomness: bool = True
     randomness_margin: int = 30
     max_time_ms: int = 1500
+    humanize: bool = False
+    human_elo: int = 2000
+    human_margin: int = 200
+    draw_avoidance: int = 200
 
 
 class ChessEngine:
     def __init__(self, config: EngineConfig):
         self.config = config
         self._stockfish: Optional[chess.engine.SimpleEngine] = None
+        self._stockfish_opts: Optional[tuple] = None
 
     def evaluate(self, board: chess.Board) -> int:
         if board.is_game_over():
             return termination_score(board, ply=0)
         if self.config.use_ml and self.config.model is not None:
             return evaluate_board(self.config.model, board)
-        return classic_evaluation(board)
+        score = classic_evaluation(board)
+        if board.can_claim_threefold_repetition() or board.can_claim_fifty_moves():
+            score -= self.config.draw_avoidance if board.turn == chess.WHITE else -self.config.draw_avoidance
+        return score
 
     def _stockfish_move(self, board: chess.Board) -> Optional[chess.Move]:
         if not self.config.use_stockfish:
@@ -48,6 +56,21 @@ class ChessEngine:
             return None
         if self._stockfish is None:
             self._stockfish = chess.engine.SimpleEngine.popen_uci(path)
+            self._stockfish_opts = None
+        desired_opts = None
+        if self.config.humanize:
+            desired_opts = (True, self.config.human_elo)
+            try:
+                self._stockfish.configure({"UCI_LimitStrength": True, "UCI_Elo": self.config.human_elo})
+            except chess.engine.EngineError:
+                pass
+        else:
+            desired_opts = (False, None)
+            try:
+                self._stockfish.configure({"UCI_LimitStrength": False})
+            except chess.engine.EngineError:
+                pass
+        self._stockfish_opts = desired_opts
         if self.config.max_time_ms > 0:
             result = self._stockfish.play(board, chess.engine.Limit(time=self.config.max_time_ms / 1000.0))
         else:
@@ -85,7 +108,7 @@ class ChessEngine:
                 deadline=deadline,
             )
             if board.is_repetition(2) or board.can_claim_threefold_repetition():
-                score += -50 if maximizing else 50
+                score += -self.config.draw_avoidance if maximizing else self.config.draw_avoidance
             board.pop()
 
             scored_moves.append((score, move))
@@ -105,7 +128,8 @@ class ChessEngine:
         if self.config.randomness and scored_moves:
             scored_moves.sort(key=lambda sm: sm[0], reverse=maximizing)
             top_score = scored_moves[0][0]
-            candidates = [m for s, m in scored_moves if (top_score - s if maximizing else s - top_score) <= self.config.randomness_margin]
+            margin = self.config.human_margin if self.config.humanize else self.config.randomness_margin
+            candidates = [m for s, m in scored_moves if (top_score - s if maximizing else s - top_score) <= margin]
             if candidates:
                 return random.choice(candidates)
         return best
@@ -140,10 +164,11 @@ class ChessEngine:
 
     def _ordered_moves(self, board: chess.Board):
         moves = list(board.legal_moves)
-        moves.sort(key=lambda m: board.is_capture(m), reverse=True)
+        moves.sort(key=lambda m: (board.is_capture(m), board.gives_check(m)), reverse=True)
         return moves
 
     def close(self):
         if self._stockfish is not None:
             self._stockfish.quit()
             self._stockfish = None
+            self._stockfish_opts = None

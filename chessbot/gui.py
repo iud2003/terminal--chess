@@ -13,7 +13,7 @@ from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QBrush, QPen
 
 from .engine import ChessEngine, EngineConfig
 from .model import load_model
-from .utils import format_eval
+from .utils import find_stockfish, format_eval
 
 
 class ChessBoardWidget(QWidget):
@@ -288,8 +288,26 @@ class ChessBotGUI(QMainWindow):
         control_layout.addWidget(self.stockfish_check)
 
         self.stockfish_path = QLineEdit()
+        self.stockfish_path.setText(
+            "C:\\Users\\isumd\\Downloads\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe"
+        )
         self.stockfish_path.setPlaceholderText("Stockfish path (optional)")
         control_layout.addWidget(self.stockfish_path)
+
+        self.stockfish_status = QLabel("Stockfish: not checked")
+        control_layout.addWidget(self.stockfish_status)
+
+        self.human_check = QCheckBox("Human-like play")
+        self.human_check.setChecked(True)
+        control_layout.addWidget(self.human_check)
+
+        control_layout.addWidget(QLabel("Human strength (Elo):"))
+        self.human_elo_spin = QSpinBox()
+        self.human_elo_spin.setMinimum(800)
+        self.human_elo_spin.setMaximum(3000)
+        self.human_elo_spin.setValue(2000)
+        self.human_elo_spin.setSingleStep(100)
+        control_layout.addWidget(self.human_elo_spin)
 
         # Theme
         control_layout.addWidget(QLabel("Board Theme:"))
@@ -358,8 +376,11 @@ class ChessBotGUI(QMainWindow):
             use_stockfish=self.stockfish_check.isChecked(),
             stockfish_path=self.stockfish_path.text().strip() or None,
             max_time_ms=self.time_spin.value(),
+            humanize=self.human_check.isChecked(),
+            human_elo=self.human_elo_spin.value(),
         )
         self.engine = ChessEngine(config)
+        self.update_stockfish_status()
         self.update_status()
 
     def update_engine_config(self):
@@ -371,6 +392,21 @@ class ChessBotGUI(QMainWindow):
         self.engine.config.randomness = self.random_check.isChecked()
         self.engine.config.use_stockfish = self.stockfish_check.isChecked()
         self.engine.config.stockfish_path = self.stockfish_path.text().strip() or None
+        self.engine.config.humanize = self.human_check.isChecked()
+        self.engine.config.human_elo = self.human_elo_spin.value()
+        self.update_stockfish_status()
+
+    def update_stockfish_status(self):
+        if not self.stockfish_check.isChecked():
+            self.stockfish_status.setText("Stockfish: disabled")
+            return
+        path = self.stockfish_path.text().strip() or None
+        resolved = find_stockfish(path)
+        if resolved:
+            mode = "Human" if self.human_check.isChecked() else "Full"
+            self.stockfish_status.setText(f"Stockfish: OK ({mode})")
+        else:
+            self.stockfish_status.setText("Stockfish: NOT FOUND")
     
     def on_side_changed(self):
         """Handle side selection change."""
